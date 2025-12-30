@@ -1,235 +1,109 @@
 import streamlit as st
 import pandas as pd
+from sqlalchemy import create_engine, text
 
-# =========================================================
+# ======================================================
 # CONFIGURAÇÃO DA PÁGINA
-# =========================================================
+# ======================================================
 st.set_page_config(
-    page_title="Sistema Financeiro",
+    page_title="Top Prestadores",
     layout="centered"
 )
 
-st.title("📊 Sistema de Análises Financeiras")
+st.title("🏆 Top Prestadores de Serviços")
 
-# =========================================================
-# FUNÇÕES UTILITÁRIAS
-# =========================================================
-def br_to_float(x):
-    if isinstance(x, str):
-        x = x.replace(".", "").replace(",", ".")
-    return float(x)
-
-def formatar_real(x):
-    return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-# =========================================================
-# FUNÇÃO: TOP PRESTADORES (COM UNIFICAÇÃO + SEM ÍNDICE)
-# =========================================================
-def top_prestadores(df, top_n, filtro_categoria="servi"):
-    df.columns = df.columns.str.strip()
-
-    COL_PRESTADOR = "Nome"
-    COL_VALOR = "Valor categoria/centro de custo"
-    COL_CATEGORIA = "Categoria"
-
-    # -------------------------------------------------
-    # Filtro de serviços
-    # -------------------------------------------------
-    df = df[
-        df[COL_CATEGORIA].str.contains(filtro_categoria, case=False, na=False)
-    ].copy()
-
-    # -------------------------------------------------
-    # Normalização técnica do nome (base de cálculo)
-    # -------------------------------------------------
-    df["Prestador_Base"] = (
-        df[COL_PRESTADOR]
-        .str.upper()
-        .str.replace("LTDA", "", regex=False)
-        .str.replace("EIRELI", "", regex=False)
-        .str.replace("ME", "", regex=False)
-        .str.replace("SERVICOS", "", regex=False)
-        .str.replace("SERVIÇOS", "", regex=False)
-        .str.replace("AMBIENTAIS", "", regex=False)
-        .str.replace("NOE", "", regex=False)
-        .str.strip()
+# ======================================================
+# CONEXÃO COM SUPABASE
+# ======================================================
+@st.cache_resource
+def get_engine():
+    return create_engine(
+        st.secrets["DATABASE_URL"],
+        connect_args={"sslmode": "require"}
     )
 
-    # -------------------------------------------------
-    # Mapa de unificação (base)
-    # -------------------------------------------------
-    MAPA_UNIFICACAO = {
-        "ANA LOGIC": "AGUA_DO_CERNES_LEVY",
-        "TINALOG": "AGUA_DO_CERNES_LEVY",
-        "MOBILITE": "AGUA_DO_CERNES_LEVY",
-        "AGUA DO CERNES": "AGUA_DO_CERNES_LEVY",
-        "AGUA DO CERNE": "AGUA_DO_CERNES_LEVY"
-    }
+engine = get_engine()
 
-    df["Prestador_Base"] = df["Prestador_Base"].replace(MAPA_UNIFICACAO)
+# ======================================================
+# FUNÇÕES AUXILIARES
+# ======================================================
+def formatar_real(valor):
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # -------------------------------------------------
-    # Nome de exibição (bonito)
-    # -------------------------------------------------
-    MAPA_EXIBICAO = {
-        "AGUA_DO_CERNES_LEVY": "Agua do Cernes (Levy)"
-    }
+def carregar_meses():
+    query = """
+        select distinct mes_referencia
+        from vw_top_prestadores
+        order by mes_referencia desc
+    """
+    return pd.read_sql(query, engine)
 
-    df["Prestador_Exibicao"] = df["Prestador_Base"].replace(MAPA_EXIBICAO)
-    df["Prestador_Exibicao"] = df["Prestador_Exibicao"].str.title()
+def carregar_top_prestadores(mes, top_n):
+    query = text("""
+        select
+            prestador,
+            total_pago
+        from vw_top_prestadores
+        where mes_referencia = :mes
+        order by total_pago desc
+        limit :top_n
+    """)
+    df = pd.read_sql(query, engine, params={"mes": mes, "top_n": top_n})
+    df["Total Pago"] = df["total_pago"].apply(formatar_real)
+    return df[["prestador", "Total Pago"]]
 
-    # -------------------------------------------------
-    # Valor absoluto (pagamentos)
-    # -------------------------------------------------
-    df["Total Pago"] = df[COL_VALOR].abs()
+def total_sem_agua(mes, top_n):
+    query = text("""
+        select sum(total_pago) as total
+        from (
+            select prestador, total_pago
+            from vw_top_prestadores
+            where mes_referencia = :mes
+            order by total_pago desc
+            limit :top_n
+        ) t
+        where prestador <> 'Agua do Cernes (Levy)'
+    """)
+    df = pd.read_sql(query, engine, params={"mes": mes, "top_n": top_n})
+    return df.iloc[0]["total"] or 0
 
-    # -------------------------------------------------
-    # Ranking Top N
-    # -------------------------------------------------
-    ranking = (
-        df
-        .groupby("Prestador_Exibicao", as_index=False)["Total Pago"]
-        .sum()
-        .sort_values(by="Total Pago", ascending=False)
-        .head(top_n)
-        .copy()
-    )
+# ======================================================
+# CONTROLES
+# ======================================================
+df_meses = carregar_meses()
 
-    # -------------------------------------------------
-    # Total geral (SEM Agua do Cernes)
-    # -------------------------------------------------
-    total_sem_agua = (
-        ranking
-        .loc[
-            ranking["Prestador_Exibicao"] != "Agua do Cernes (Levy)",
-            "Total Pago"
-        ]
-        .sum()
-    )
+if df_meses.empty:
+    st.warning("Nenhum dado encontrado.")
+    st.stop()
 
-    # -------------------------------------------------
-    # Formatação e REMOÇÃO DO ÍNDICE
-    # -------------------------------------------------
-    ranking["Total Pago (R$)"] = ranking["Total Pago"].apply(formatar_real)
-
-    resultado_final = (
-        ranking[["Prestador_Exibicao", "Total Pago (R$)"]]
-        .reset_index(drop=True)
-    )
-
-    return resultado_final, total_sem_agua
-
-# =========================================================
-# FUNÇÃO: CONCILIAÇÃO DE ND
-# =========================================================
-def conciliar_nd(df, solicitante, valor_alvo):
-    COLUNA_VALOR = "valor"
-    COLUNA_DATA = "DT Recebimento"
-    COLUNA_SOLICITANTE = "Solicitante"
-    COLUNA_ND = "ND"
-
-    df = df[
-        df[COLUNA_DATA].isna() &
-        (df[COLUNA_SOLICITANTE] == solicitante)
-    ].copy()
-
-    df[COLUNA_VALOR] = df[COLUNA_VALOR].apply(br_to_float)
-    valor_alvo = br_to_float(valor_alvo)
-
-    nd_totais = (
-        df
-        .groupby(COLUNA_ND)[COLUNA_VALOR]
-        .sum()
-        .reset_index()
-    )
-
-    valores = nd_totais[COLUNA_VALOR].tolist()
-    nds = nd_totais[COLUNA_ND].tolist()
-
-    ordenado = sorted(zip(valores, nds), reverse=True)
-    valores, nds = zip(*ordenado) if ordenado else ([], [])
-
-    resultado = []
-
-    def busca(i, soma, comb):
-        if abs(soma - valor_alvo) < 0.00001:
-            resultado.append(comb)
-            return True
-        if soma > valor_alvo or i == len(valores):
-            return False
-        if busca(i + 1, soma + valores[i], comb + [i]):
-            return True
-        return busca(i + 1, soma, comb)
-
-    busca(0, 0, [])
-
-    if resultado:
-        saida = []
-        for idx in resultado[0]:
-            saida.append({
-                "ND": nds[idx],
-                "Total": formatar_real(valores[idx])
-            })
-
-        total = formatar_real(sum(valores[idx] for idx in resultado[0]))
-        return pd.DataFrame(saida).reset_index(drop=True), total
-
-    return None, None
-
-# =========================================================
-# SIDEBAR - MENU
-# =========================================================
-st.sidebar.title("📌 Menu")
-opcao = st.sidebar.radio(
-    "Escolha a análise:",
-    ["Top Prestadores", "Conciliação ND"]
+mes = st.selectbox(
+    "📅 Selecione o mês de referência",
+    df_meses["mes_referencia"].dt.strftime("%Y-%m").tolist()
 )
 
-arquivo = st.sidebar.file_uploader(
-    "📂 Upload do arquivo Excel",
-    type=["xlsx"]
-)
+top_n = st.selectbox("🔢 Top N", [5, 10, 20, 50], index=1)
 
-# =========================================================
-# TELA: TOP PRESTADORES
-# =========================================================
-if opcao == "Top Prestadores":
-    st.subheader("🏆 Top Prestadores de Serviços")
+# Converter para data real
+mes_data = pd.to_datetime(mes + "-01")
 
-    top_n = st.selectbox("Selecione o Top N", [5, 10, 20, 50])
+# ======================================================
+# EXECUÇÃO
+# ======================================================
+if st.button("▶ Gerar Ranking"):
+    resultado = carregar_top_prestadores(mes_data, top_n)
+    total = total_sem_agua(mes_data, top_n)
 
-    if arquivo and st.button("▶ Executar"):
-        df = pd.read_excel(arquivo)
+    st.success("Ranking gerado com sucesso")
 
-        resultado, total_sem_agua = top_prestadores(df, top_n)
+    # 👉 remove índice visual
+    st.dataframe(
+        resultado.reset_index(drop=True),
+        use_container_width=True
+    )
 
-        st.success("Resultado gerado com sucesso!")
-        st.dataframe(resultado, use_container_width=True)
+    st.markdown(
+        f"### 💰 Total geral dos Top {top_n} (sem Água do Cernes): "
+        f"**{formatar_real(total)}**"
+    )
 
-        st.markdown(
-            f"### 💰 Total geral dos Top {top_n} "
-            f"(sem Agua do Cernes): **{formatar_real(total_sem_agua)}**"
-        )
-
-        st.caption("💡 Você pode selecionar e copiar direto para o Excel")
-
-# =========================================================
-# TELA: CONCILIAÇÃO ND
-# =========================================================
-if opcao == "Conciliação ND":
-    st.subheader("🧾 Conciliação de ND")
-
-    solicitante = st.text_input("Solicitante")
-    valor_alvo = st.text_input("Valor alvo (ex: 1.500,00)")
-
-    if arquivo and solicitante and valor_alvo and st.button("▶ Executar"):
-        df = pd.read_excel(arquivo)
-
-        resultado, total = conciliar_nd(df, solicitante, valor_alvo)
-
-        if resultado is not None:
-            st.success("Combinação encontrada!")
-            st.dataframe(resultado, use_container_width=True)
-            st.markdown(f"### ✔ Soma total: **{total}**")
-        else:
-            st.error("❌ Nenhuma combinação de ND fecha o valor alvo.")
+    st.caption("📌 Dados oficiais direto do Supabase (VIEW vw_top_prestadores)")
