@@ -170,7 +170,7 @@ if opcao == "Top Prestadores":
         resultado, total_sem_agua = top_prestadores(df, top_n)
 
         st.success("Resultado gerado com sucesso!")
-        sst.dataframe(resultado, use_container_width=True)
+        st.dataframe(resultado, use_container_width=True)
 
         st.markdown(
             f"### 💰 Total geral dos Top {top_n} (sem Agua do Cernes): "
