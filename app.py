@@ -40,7 +40,7 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     ].copy()
 
     # ------------------------------
-    # Normalização técnica do nome
+    # Normalização técnica
     # ------------------------------
     df["Prestador_Base"] = (
         df[COL_PRESTADOR]
@@ -56,7 +56,7 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     )
 
     # ------------------------------
-    # Mapa de unificação (base)
+    # Unificação
     # ------------------------------
     MAPA_UNIFICACAO = {
         "ANA LOGIC": "AGUA_DO_CERNES_LEVY",
@@ -69,7 +69,7 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     df["Prestador_Base"] = df["Prestador_Base"].replace(MAPA_UNIFICACAO)
 
     # ------------------------------
-    # Nome de exibição (bonito)
+    # Nome de exibição
     # ------------------------------
     MAPA_EXIBICAO = {
         "AGUA_DO_CERNES_LEVY": "Agua do Cernes (Levy)"
@@ -79,7 +79,7 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     df["Prestador_Exibicao"] = df["Prestador_Exibicao"].str.title()
 
     # ------------------------------
-    # Valor absoluto (pagamentos)
+    # Valor absoluto
     # ------------------------------
     df["Total Pago"] = df[COL_VALOR].abs()
 
@@ -96,7 +96,7 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     )
 
     # ------------------------------
-    # Total geral sem Agua do Cernes
+    # Total geral (sem Agua do Cernes)
     # ------------------------------
     total_sem_agua = (
         ranking
@@ -199,7 +199,7 @@ if opcao == "Top Prestadores":
         resultado, total_sem_agua = top_prestadores(df, top_n)
 
         st.success("Resultado gerado com sucesso!")
-        st.dataframe(resultado, use_container_width=True)
+        st.dataframe(resultado, use_container_width=True, hide_index=True)
 
         st.markdown(
             f"### 💰 Total geral dos Top {top_n} "
@@ -224,7 +224,7 @@ if opcao == "Conciliação ND":
 
         if resultado is not None:
             st.success("Combinação encontrada!")
-            st.dataframe(resultado, use_container_width=True)
+            st.dataframe(resultado, use_container_width=True, hide_index=True)
             st.markdown(f"### ✔ Soma total: **{total}**")
         else:
             st.error("❌ Nenhuma combinação de ND fecha o valor alvo.")
