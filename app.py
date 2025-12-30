@@ -23,7 +23,7 @@ def formatar_real(x):
     return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 # =========================================================
-# FUNÇÃO: TOP PRESTADORES (COM UNIFICAÇÃO)
+# FUNÇÃO: TOP PRESTADORES (COM UNIFICAÇÃO + SEM ÍNDICE)
 # =========================================================
 def top_prestadores(df, top_n, filtro_categoria="servi"):
     df.columns = df.columns.str.strip()
@@ -32,16 +32,16 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     COL_VALOR = "Valor categoria/centro de custo"
     COL_CATEGORIA = "Categoria"
 
-    # ------------------------------
+    # -------------------------------------------------
     # Filtro de serviços
-    # ------------------------------
+    # -------------------------------------------------
     df = df[
         df[COL_CATEGORIA].str.contains(filtro_categoria, case=False, na=False)
     ].copy()
 
-    # ------------------------------
-    # Normalização técnica
-    # ------------------------------
+    # -------------------------------------------------
+    # Normalização técnica do nome (base de cálculo)
+    # -------------------------------------------------
     df["Prestador_Base"] = (
         df[COL_PRESTADOR]
         .str.upper()
@@ -55,9 +55,9 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
         .str.strip()
     )
 
-    # ------------------------------
-    # Unificação
-    # ------------------------------
+    # -------------------------------------------------
+    # Mapa de unificação (base)
+    # -------------------------------------------------
     MAPA_UNIFICACAO = {
         "ANA LOGIC": "AGUA_DO_CERNES_LEVY",
         "TINALOG": "AGUA_DO_CERNES_LEVY",
@@ -68,9 +68,9 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
 
     df["Prestador_Base"] = df["Prestador_Base"].replace(MAPA_UNIFICACAO)
 
-    # ------------------------------
-    # Nome de exibição
-    # ------------------------------
+    # -------------------------------------------------
+    # Nome de exibição (bonito)
+    # -------------------------------------------------
     MAPA_EXIBICAO = {
         "AGUA_DO_CERNES_LEVY": "Agua do Cernes (Levy)"
     }
@@ -78,14 +78,14 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     df["Prestador_Exibicao"] = df["Prestador_Base"].replace(MAPA_EXIBICAO)
     df["Prestador_Exibicao"] = df["Prestador_Exibicao"].str.title()
 
-    # ------------------------------
-    # Valor absoluto
-    # ------------------------------
+    # -------------------------------------------------
+    # Valor absoluto (pagamentos)
+    # -------------------------------------------------
     df["Total Pago"] = df[COL_VALOR].abs()
 
-    # ------------------------------
+    # -------------------------------------------------
     # Ranking Top N
-    # ------------------------------
+    # -------------------------------------------------
     ranking = (
         df
         .groupby("Prestador_Exibicao", as_index=False)["Total Pago"]
@@ -95,9 +95,9 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
         .copy()
     )
 
-    # ------------------------------
-    # Total geral (sem Agua do Cernes)
-    # ------------------------------
+    # -------------------------------------------------
+    # Total geral (SEM Agua do Cernes)
+    # -------------------------------------------------
     total_sem_agua = (
         ranking
         .loc[
@@ -107,12 +107,17 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
         .sum()
     )
 
-    # ------------------------------
-    # Formatação
-    # ------------------------------
+    # -------------------------------------------------
+    # Formatação e REMOÇÃO DO ÍNDICE
+    # -------------------------------------------------
     ranking["Total Pago (R$)"] = ranking["Total Pago"].apply(formatar_real)
 
-    return ranking[["Prestador_Exibicao", "Total Pago (R$)"]], total_sem_agua
+    resultado_final = (
+        ranking[["Prestador_Exibicao", "Total Pago (R$)"]]
+        .reset_index(drop=True)
+    )
+
+    return resultado_final, total_sem_agua
 
 # =========================================================
 # FUNÇÃO: CONCILIAÇÃO DE ND
@@ -167,7 +172,7 @@ def conciliar_nd(df, solicitante, valor_alvo):
             })
 
         total = formatar_real(sum(valores[idx] for idx in resultado[0]))
-        return pd.DataFrame(saida), total
+        return pd.DataFrame(saida).reset_index(drop=True), total
 
     return None, None
 
@@ -199,7 +204,7 @@ if opcao == "Top Prestadores":
         resultado, total_sem_agua = top_prestadores(df, top_n)
 
         st.success("Resultado gerado com sucesso!")
-        st.dataframe(resultado, use_container_width=True, hide_index=True)
+        st.dataframe(resultado, use_container_width=True)
 
         st.markdown(
             f"### 💰 Total geral dos Top {top_n} "
@@ -224,7 +229,7 @@ if opcao == "Conciliação ND":
 
         if resultado is not None:
             st.success("Combinação encontrada!")
-            st.dataframe(resultado, use_container_width=True, hide_index=True)
+            st.dataframe(resultado, use_container_width=True)
             st.markdown(f"### ✔ Soma total: **{total}**")
         else:
             st.error("❌ Nenhuma combinação de ND fecha o valor alvo.")
