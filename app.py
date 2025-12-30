@@ -31,10 +31,19 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     COL_PRESTADOR = "Nome"
     COL_VALOR = "Valor categoria/centro de custo"
     COL_CATEGORIA = "Categoria"
-    
-    # 🔹 Normalização pesada do nome do prestador
-    df[COL_PRESTADOR] = (
-    df[COL_PRESTADOR]
+
+    # ==============================
+    # FILTRO DE SERVIÇOS
+    # ==============================
+    df = df[
+        df[COL_CATEGORIA].str.contains(filtro_categoria, case=False, na=False)
+    ].copy()
+
+    # ==============================
+    # NORMALIZAÇÃO (BASE TÉCNICA)
+    # ==============================
+    df["Prestador_Base"] = (
+        df[COL_PRESTADOR]
         .str.upper()
         .str.replace("LTDA", "", regex=False)
         .str.replace("EIRELI", "", regex=False)
@@ -46,38 +55,40 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
         .str.strip()
     )
 
-    # Filtro de serviços
-    df = df[
-        df[COL_CATEGORIA].str.contains(filtro_categoria, case=False, na=False)
-    ].copy()
-
     # ==============================
-    # MAPA DE UNIFICAÇÃO
+    # MAPA DE UNIFICAÇÃO (BASE)
     # ==============================
     MAPA_UNIFICACAO = {
-        "ANA LOGIC": "Agua do Cernes (Levy)",
-        "TINALOG": "Agua do Cernes (Levy)",
-        "MOBILITE": "Agua do Cernes (Levy)",
-        "AGUA DO CERNE": "Agua do Cernes (Levy)"
+        "ANA LOGIC": "AGUA_DO_CERNES_LEVY",
+        "TINALOG": "AGUA_DO_CERNES_LEVY",
+        "MOBILITE": "AGUA_DO_CERNES_LEVY",
+        "AGUA DO CERNES": "AGUA_DO_CERNES_LEVY",
+        "AGUA DO CERNE": "AGUA_DO_CERNES_LEVY"
     }
 
-    # Normalizar nome
-    df[COL_PRESTADOR] = df[COL_PRESTADOR].str.upper()
+    df["Prestador_Base"] = df["Prestador_Base"].replace(MAPA_UNIFICACAO)
 
-    # Aplicar unificação
-    for chave, nome_unificado in MAPA_UNIFICACAO.items():
-        df.loc[
-            df[COL_PRESTADOR].str.contains(chave, na=False),
-            COL_PRESTADOR
-        ] = nome_unificado
+    # ==============================
+    # MAPA DE EXIBIÇÃO (NOME BONITO)
+    # ==============================
+    MAPA_EXIBICAO = {
+        "AGUA_DO_CERNES_LEVY": "Agua do Cernes (Levy)"
+    }
 
-    # Valor absoluto
+    df["Prestador_Exibicao"] = df["Prestador_Base"].replace(MAPA_EXIBICAO)
+    df["Prestador_Exibicao"] = df["Prestador_Exibicao"].str.title()
+
+    # ==============================
+    # VALOR ABSOLUTO (PAGAMENTO)
+    # ==============================
     df["Total Pago"] = df[COL_VALOR].abs()
 
-    # Ranking
+    # ==============================
+    # RANKING TOP N
+    # ==============================
     ranking = (
         df
-        .groupby(COL_PRESTADOR, as_index=False)["Total Pago"]
+        .groupby("Prestador_Exibicao", as_index=False)["Total Pago"]
         .sum()
         .sort_values(by="Total Pago", ascending=False)
         .head(top_n)
@@ -89,15 +100,17 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     # ==============================
     total_sem_agua = (
         ranking
-        .loc[ranking[COL_PRESTADOR] != "Agua do Cernes (Levy)", "Total Pago"]
+        .loc[ranking["Prestador_Exibicao"] != "Agua do Cernes (Levy)", "Total Pago"]
         .sum()
     )
 
-    # Formatação
+    # ==============================
+    # FORMATAÇÃO
+    # ==============================
     ranking["Total Pago (R$)"] = ranking["Total Pago"].apply(formatar_real)
 
-    return ranking[[COL_PRESTADOR, "Total Pago (R$)"]], total_sem_agua
-
+    # Retorna tabela + total
+    return ranking[["Prestador_Exibicao", "Total Pago (R$)"]], total_sem_agua
 
 # =========================================================
 # FUNÇÃO: CONCILIAÇÃO ND
