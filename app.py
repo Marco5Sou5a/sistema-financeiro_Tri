@@ -31,6 +31,20 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     COL_PRESTADOR = "Nome"
     COL_VALOR = "Valor categoria/centro de custo"
     COL_CATEGORIA = "Categoria"
+    
+    # 🔹 Normalização pesada do nome do prestador
+    df[COL_PRESTADOR] = (
+    df[COL_PRESTADOR]
+        .str.upper()
+        .str.replace("LTDA", "", regex=False)
+        .str.replace("EIRELI", "", regex=False)
+        .str.replace("ME", "", regex=False)
+        .str.replace("SERVICOS", "", regex=False)
+        .str.replace("SERVIÇOS", "", regex=False)
+        .str.replace("AMBIENTAIS", "", regex=False)
+        .str.replace("NOE", "", regex=False)
+        .str.strip()
+    )
 
     # Filtro de serviços
     df = df[
