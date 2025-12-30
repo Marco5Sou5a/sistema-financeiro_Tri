@@ -32,23 +32,58 @@ def top_prestadores(df, top_n, filtro_categoria="servi"):
     COL_VALOR = "Valor categoria/centro de custo"
     COL_CATEGORIA = "Categoria"
 
+    # Filtro de serviços
     df = df[
         df[COL_CATEGORIA].str.contains(filtro_categoria, case=False, na=False)
     ].copy()
 
+    # ==============================
+    # MAPA DE UNIFICAÇÃO
+    # ==============================
+    MAPA_UNIFICACAO = {
+        "ANA LOGIC": "Agua do Cernes (Levy)",
+        "TINALOG": "Agua do Cernes (Levy)",
+        "MOBILITE": "Agua do Cernes (Levy)",
+        "AGUA DO CERNE": "Agua do Cernes (Levy)"
+    }
+
+    # Normalizar nome
+    df[COL_PRESTADOR] = df[COL_PRESTADOR].str.upper()
+
+    # Aplicar unificação
+    for chave, nome_unificado in MAPA_UNIFICACAO.items():
+        df.loc[
+            df[COL_PRESTADOR].str.contains(chave, na=False),
+            COL_PRESTADOR
+        ] = nome_unificado
+
+    # Valor absoluto
     df["Total Pago"] = df[COL_VALOR].abs()
 
+    # Ranking
     ranking = (
         df
         .groupby(COL_PRESTADOR, as_index=False)["Total Pago"]
         .sum()
         .sort_values(by="Total Pago", ascending=False)
         .head(top_n)
+        .copy()
     )
 
+    # ==============================
+    # TOTAL GERAL (SEM AGUA DO CERNES)
+    # ==============================
+    total_sem_agua = (
+        ranking
+        .loc[ranking[COL_PRESTADOR] != "Agua do Cernes (Levy)", "Total Pago"]
+        .sum()
+    )
+
+    # Formatação
     ranking["Total Pago (R$)"] = ranking["Total Pago"].apply(formatar_real)
 
-    return ranking[[COL_PRESTADOR, "Total Pago (R$)"]]
+    return ranking[[COL_PRESTADOR, "Total Pago (R$)"]], total_sem_agua
+
 
 # =========================================================
 # FUNÇÃO: CONCILIAÇÃO ND
@@ -132,10 +167,15 @@ if opcao == "Top Prestadores":
 
     if arquivo and st.button("▶ Executar"):
         df = pd.read_excel(arquivo)
-        resultado = top_prestadores(df, top_n)
+        resultado, total_sem_agua = top_prestadores(df, top_n)
 
         st.success("Resultado gerado com sucesso!")
-        st.dataframe(resultado, use_container_width=True)
+        sst.dataframe(resultado, use_container_width=True)
+
+        st.markdown(
+            f"### 💰 Total geral dos Top {top_n} (sem Agua do Cernes): "
+            f"**{formatar_real(total_sem_agua)}**"
+        )
 
         st.caption("💡 Você pode selecionar e copiar direto para o Excel")
 
